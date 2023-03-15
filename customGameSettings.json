@@ -1,0 +1,21 @@
+{
+    "Extensions": {
+        "Play More Effects": true,
+        "Beam Effects": true,
+        "Buff and Debuff Sounds": true,
+        "Spawn More Dummy Bots": true
+    },
+    "Lobby": {
+        "Max FFA Players": 12
+    },
+    "Modes": {
+        "All": {
+            "Kill Cam": false
+        },
+        "Deathmatch": {
+            "Enabled Maps": ["Workshop Chamber"],
+            "Game Length In Minutes": 15,
+            "Score To Win": 25
+        }
+    }
+}

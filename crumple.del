@@ -1,0 +1,204 @@
+import "customGameSettings.json";
+globalvar Vector[] model = GetLines('crumple.obj');
+globalvar Number[] x;
+globalvar Number[] y;
+globalvar Number[] z;
+globalvar Vector position = Vector(0,0.1,0);
+globalvar define rotation = Vector(0,0,1);
+globalvar Vector[] display;
+globalvar Player Bot;
+globalvar Number CrumpleDamage;
+globalvar Number CrumpleDeathTime;
+globalvar Player target;
+globalvar Vector randPos;
+globalvar Player[] InDanger;
+globalvar Number MODE = WorkshopSettingCombo("Gamemode","Crumple Strat", 0, ["Random","Hunt"],0);
+globalvar Number RESPAWN_TIME = WorkshopSettingInteger("Gamemode","Crumple Respawn Time",15,1,600,1);
+globalvar Number CRUMPLE_HEALTH = WorkshopSettingInteger("Gamemode","Crumple Health",5000,2000,40000,2);
+globalvar Number CRUMPLE_REWARD = WorkshopSettingInteger("Gamemode","Points for slaying the Crumple",5,0,25,3);
+globalvar Number DEATH_PUNISHMENT = WorkshopSettingInteger("Gamemode","Lost Score on Death to the Crumple",-1,-5,0,4);
+globalvar Number CRUMPLE_SPEED = WorkshopSettingInteger("Gamemode","Crumple speed (speed per second)",15,1,50,5);
+
+playervar Any DOT_Ref;
+
+rule: "Setup Gamemode"{
+    DisableInspectorRecording();
+
+}
+rule: "Setup Cat"
+Event.OngoingGlobal
+{
+    x = model.Map(vector => vector.X);
+    y = model.Map(vector => vector.Y);
+    z = model.Map(vector => vector.Z);
+    for(Number i = 0; model.Length-1; 2) //for (Number i = 0; model.Length; 2)
+    {
+        Number actualLine = i/2~Floor();
+        if ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 176, 177, 178, 179, 180, 181, 182, 183].Contains(actualLine))
+            MakeBeam(i, BeamType.GrappleBeam, Color.Gray); //frame, crumple
+        else if([65, 71, 82, 83, 85, 95, 96, 98, 99, 107, 117, 121, 124, 125, 139, 143, 147, 170, 171, 184, 185, 188, 189, 190, 191, 192, 194, 196, 199, 200, 203, 204, 206, 207, 208, 209, 211, 212, 213, 214, 215, 216, 217, 219, 220, 221, 222, 223, 226, 227, 228].Contains(actualLine))
+            MakeBeam(i, BeamType.GoodBeam, Color.White); //white
+        else if([58, 59, 60, 61, 62, 63, 64, 66, 67, 76, 77, 78, 88, 92, 102, 105, 106, 108, 109, 115, 116, 118, 119, 121, 122, 127, 131, 132, 141, 142, 146, 151, 158, 159, 161, 168, 169, 174, 184, 187, 205, 217].Contains(actualLine))
+            MakeBeam(i, BeamType.GoodBeam, Color.Black); //black
+        else if([97, 110, 112, 166, 193, 195, 201, 218, 224, 225, 229, 230, 232].Contains(actualLine)) //CHEESE
+            MakeBeam(i, BeamType.MercyHealBeam, Color.Yellow); //cheese
+        else
+            MakeBeam(i, BeamType.BadBeam, Color.Black); //grey
+        if(NumberOfPlayers(Team.All)>6){
+            Wait();
+        }
+        
+    }
+}
+
+void MakeBeam(in Number i, BeamType beam, in Color color)
+{
+    CreateBeamEffect(CRUMPLE_HEALTH-CrumpleDamage > 0 ? LocalPlayer() : null, beam, 
+    UpdateEveryFrame(position + display[EvaluateOnce(i)]),
+    UpdateEveryFrame(position + display[EvaluateOnce(i+1)]),
+    color, EffectRev.VisibleToPositionRadiusAndColor);  
+}
+
+rule: "Setup Bot"
+Event.OngoingGlobal
+{   
+    if(EntityExists(Bot)){
+        Abort();
+    }
+    CreateDummyBot(Hero.Sigma,Team.All,13,position,Right());
+    Bot = LastCreatedEntity();
+    StartForcingDummyBotName(Bot,"Crumple");
+    StartScalingPlayer(Bot,2.75,false);
+    StartFacing(Bot,rotation * -1,600,Relative.ToWorld,FacingRev.DirectionAndTurnRate);
+    StartForcingPlayerPosition(Bot,position+Vector(0,0.4,0));
+    SetInvisible(Bot,InvisibleTo.All);
+    SetRespawnMaxTime(Bot,RESPAWN_TIME+1);
+    ForcePlayerHero(Bot,Hero.Sigma);
+    SetMaxHealth(Bot,CRUMPLE_HEALTH/4);
+    CreateProgressBarHudText(
+        LocalPlayer(), 
+        CRUMPLE_HEALTH-CrumpleDamage > 0 ? 100*(CRUMPLE_HEALTH-CrumpleDamage)/CRUMPLE_HEALTH : (100/RESPAWN_TIME) * Min(RESPAWN_TIME,TotalTimeElapsed()-CrumpleDeathTime), 
+        "Wither And Die",
+        Location.Top,
+        5,
+        Color.Orange,
+        Color.Black,
+        ProgressBarHudEvaluation.VisibleToAndValues,
+        Spectators.DefaultVisibility
+    );
+}
+
+
+
+
+//              ROTATE CRUMPLE (trust me)            //
+
+Vector rotate(Vector v, Number i): (v * Vector(x[i],0,x[i]) + Vector(-z[i] * v.Z,y[i],z[i] * v.X)); //heavily optimized vector rotation for x-z plane
+
+rule: "Bot Rotator"
+Event.OngoingGlobal
+{   
+    display = model.Map((a,i) => rotate(rotation,i));
+    Wait(0.1);
+    Loop();
+}
+    
+//           CRUMPLE ATTACK            //
+
+rule: "Cheese Smack"
+Event.OngoingPlayer
+if(SlotOf(EventPlayer()) == 13)
+if(HasSpawned(EventPlayer()) && IsAlive(EventPlayer()))
+if(PlayersWithinRadius(position,4,Team.All,RadiusLOS.Off).Length>1)
+{
+    foreach(Player p in PlayersWithinRadius(position,4,Team.All,RadiusLOS.Off).Remove(Bot)){
+            Damage(p,Bot,400);
+            CreateEffect(LocalPlayer(),Effect.MeiFrozenSound,null,p,2,EffectRev.VisibleToPositionAndRadius);
+            SetStatus(p,Bot,Status.Burning,2);
+            StartDamageOverTime(p,Bot,2,25);
+            p.DOT_Ref = LastDamageOverTime();
+    }
+    Wait(5/CRUMPLE_SPEED);
+    LoopIfConditionIsTrue();
+}
+
+
+//            DEATHMATCH MECHANICS          //
+
+
+rule: "Player dies"
+Event.OnDeath
+if(SlotOf(EventPlayer()) != 13)
+{
+    ModifyPlayerScore(Bot,-1);
+    ModifyPlayerScore(EventPlayer(),DEATH_PUNISHMENT);
+    StopDamageOverTime(EventPlayer().DOT_Ref);
+}
+
+rule: "Bot take damage"
+Event.OnDamageTaken
+if(SlotOf(EventPlayer()) == 13)
+{
+    CrumpleDamage += EventDamage()*2;
+    if(CRUMPLE_HEALTH-CrumpleDamage<0){
+        Kill(Bot,Attacker());
+    }
+}
+
+rule: "Bot dies"
+Event.OnDeath
+if(SlotOf(EventPlayer()) == 13)
+{
+    CrumpleDeathTime = TotalTimeElapsed();
+    ModifyPlayerScore(Attacker(),CRUMPLE_REWARD);
+    WaitUntil(Bot.IsAlive(),RESPAWN_TIME+5);
+    CrumpleDamage = 0;
+}
+
+//            HUNT MODE          //
+
+
+rule: "Update Bot Target"
+Event.OngoingGlobal
+if(MODE == 1)
+if(!target.IsAlive() || !EntityExists(target) || DistanceBetween(target,Bot)>17)
+{   
+    display = model.Map((a,i) => rotate(rotation,i));
+    target = false;
+    InDanger = SortedArray(FilteredArray(AllLivingPlayers().Remove(Bot),DistanceBetween(ArrayElement(),position)<17),DistanceBetween(ArrayElement(),position)); //grab a new target
+    if(InDanger.Length<1){
+        Wait();
+        Loop();
+    }
+    Wait();
+    target = InDanger[0];
+    ChaseVariableAtRate(position, UpdateEveryFrame(target ? PositionOf(target) : Vector(0,0,0)),CRUMPLE_SPEED,RateChaseReevaluation.DestinationAndRate);
+}
+
+
+rule: "Face Target"
+Event.OngoingGlobal
+if(MODE == 1)
+if(target && DistanceBetween(target,Bot)>2)
+{   
+    rotation = DirectionTowards(target,position);
+    Wait(0.016);
+    LoopIfConditionIsTrue();
+    display = model;
+}
+
+//           RANDOM MODE         //
+rule: "Update Bot Target"
+Event.OngoingGlobal
+if(MODE == 0)
+if(Bot.IsAlive())
+{
+    randPos = Vector(RandomReal(-20,20),0,RandomReal(-20,20));
+    ChaseVariableAtRate(position, randPos,CRUMPLE_SPEED,RateChaseReevaluation.DestinationAndRate);
+    rotation = DirectionTowards(randPos,position);
+    WaitUntil(DistanceBetween(position,randPos)<0.05 || !Bot.IsAlive(),10);
+    Wait();
+    LoopIfConditionIsTrue();
+}
+
+
